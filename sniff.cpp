@@ -14,6 +14,7 @@
 #include <netinet/ip_icmp.h>
 #include <arpa/inet.h>
 #include <vector>
+#include <time.h>
 
 #define PROMISCUOUS 1
 #define NONPROMISCUOUS 0
@@ -33,18 +34,15 @@ bool isSame(vector<int> ip1, vector<int> ip2){
 vector<vector<int> > v;
 void pcapHandler(u_char *args, const struct pcap_pkthdr *header, const u_char *packet){
 
+    time_t timer;
+    struct tm *tt;
+
+    timer = time(NULL);
+    tt=localtime(&timer);
+   
+    FILE *fp = fopen("oui.txt","r");
     int length = header->len;
-
-    struct ieee80211_hdr {
-        uint16_t frame_control;
-        uint16_t duration_id;
-        uint8_t addr1[6];
-        uint8_t addr2[6];
-        uint8_t addr3[6];
-        uint16_t seq_ctrl;
-        uint8_t addr4[6];
-
-    };
+    char oui[100];
     struct radiotap_header{
         uint8_t it_rev;
         uint8_t it_pad;
@@ -72,80 +70,56 @@ void pcapHandler(u_char *args, const struct pcap_pkthdr *header, const u_char *p
     channel = packet + 18;
     int channelFreq = channel[1] * 256 + channel[0];
 
-    //char *ssid = (char*)malloc(63);
-    char ssid[64];
-    unsigned int i=0;
+    char *ssid = (char*)malloc(63);
     memset(ssid,0,sizeof(char)*63);
     unsigned int idx = 0;
-    
-    /*
-    while(essid[i] > 0x1) {
-        ssid[i] = essid[i];
-        i++;
-    }
-    */
-
     for(int i=50;i<50+essidLen[0];i++){
             ssid[idx] = packet[i];
             idx++;
     }
-/*     
-    //beacon
-   //if(bssid[0]==0x08&&bssid[1]==0x5d&&bssid[2]==0xdd&&bssid[3]==0x64&&bssid[4]==0x14&&bssid[5]==0xe5){
-    ssid[i] = '\0';
-    printf("RSSI: %d dBm\n", rssiDbm);
-    printf("Ap Frequency: %iMhz", channelFreq);
-    printf("ESSID length: %i bytes.\n",essidLen);
-    printf("BSSID string: %02X:%02X:%02X:%02X:%02X:%02X\n", bssid[0], bssid[1],bssid[2],bssid[3],bssid[4],bssid[5]);
-    printf("offset %d\n",offset);
- // }
-*/
-    
+       
     //probe
 
-    vector<int > t, temp; 
-
+    vector<int > t;
     for(int i=offset+10;i<offset+16;i++){
         t.push_back(packet[i]);
     }
-    temp.push_back(0x64);
-    temp.push_back(0xbc);
-    temp.push_back(0x0c);
-    temp.push_back(0x21);
-    temp.push_back(0xab);
-    temp.push_back(0x12);
-
     bool isNew = true;
     for(int i=0;i<v.size();i++){
-        if(isSame(temp, v[i]))
+        if(isSame(t, v[i]))
             isNew=false;
     }
-    isNew = isSame(temp, t);
-    if(isNew && rssiDbm > -100){
+    if(isNew && rssiDbm > -80){
         int c = v.size();
+        char vendor[100];
+        memset(vendor,0,sizeof(vendor));
         v.push_back(t);
+        printf("%d.%.02d.%.02d %.02d:%.02d:%.02d ", tt->tm_year+1900,tt->tm_mon+1,tt->tm_mday,tt->tm_hour,tt->tm_min,tt->tm_sec);
         printf("%d.Sender Ether %02X:%02X:%02X:%02X:%02X:%02X",v.size(),v[c][0],v[c][1],v[c][2],v[c][3],v[c][4],v[c][5]);
-        printf(" RSSI: %d dBm Channel Freq %d ESSID string: %s\n", rssiDbm, channelFreq, ssid);
-        /*        
-        int j=1;
-        for(int i=0;i<length;i++){
-            if((i-offset)==16*j){
-                printf("\n");
-            j++;
+        printf(" RSSI: %d dBm ESSID string: %s", rssiDbm,ssid);
+        
+        sprintf(vendor,"%02X",v[c][0]);
+        sprintf(vendor+2,"%02X",v[c][1]);
+        sprintf(vendor+4,"%02X",v[c][2]);
+
+        while(fgets(oui, 100, fp) != NULL){
+            if(strstr(oui, vendor)!=NULL){
+                break;
             }
-            printf("%02X:",packet[i]);
-    
-        } 
-        */
+        }
+        fseek(fp,0,SEEK_SET);
+ 
+        printf(" Vendor: %s\n", strtok(&oui[22], " ")); 
     }
-    
+ 
+   
 }
 int main(int argc, char **argv)
 {
     char *dev;
     char *net;
     char *mask;
-    
+
     bpf_u_int32 netp;
     bpf_u_int32 maskp;
     char errbuf[PCAP_ERRBUF_SIZE];
@@ -158,7 +132,6 @@ int main(int argc, char **argv)
     struct bpf_program fp;
 
     pcap_t *pcd;
-
     dev = pcap_lookupdev(errbuf);
 
     if(dev==NULL){

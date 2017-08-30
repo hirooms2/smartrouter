@@ -13,21 +13,27 @@
 #include <netinet/udp.h>
 #include <netinet/ip_icmp.h>
 #include <arpa/inet.h>
+#include <vector>
 
 #define PROMISCUOUS 1
 #define NONPROMISCUOUS 0
 
+using namespace std;
+
 struct ip *iph;
 struct tcphdr *tcph;
 
-typedef struct info {
-    int ip[4];
-    int mac[6];
-} addr;
-struct myDB {
-    addr addrs[30];
-    
-};
+bool isSame(vector<int> ip1, vector<int> ip2){
+    bool ok = true;
+    for(int i=0;i<4;i++){
+        if(ip1[i]!=ip2[i]){
+            ok=false;
+        }
+    }
+    return ok;
+}
+vector<vector<int> > v;
+
 void callback(u_char *useless, const struct pcap_pkthdr *pkthdr, const u_char *packet){
     static int count = 1;
     struct ether_header *ep;
@@ -41,7 +47,6 @@ void callback(u_char *useless, const struct pcap_pkthdr *pkthdr, const u_char *p
     packet+=sizeof(struct ether_header);
 
     ether_type = ntohs(ep->ether_type);
-
     if(ether_type == ETHERTYPE_IP){
         iph = (struct ip*)packet;
         printf("IP Packet\n");
@@ -64,27 +69,40 @@ void callback(u_char *useless, const struct pcap_pkthdr *pkthdr, const u_char *p
         }
     }
     else if(ether_type == ETHERTYPE_ARP){
-        printf("Ethernet type hex:%x dev:%d is an ARP packet\n",
-                ntohs(ep->ether_type),ntohs(ep->ether_type));
-        /*while(length--){
-            printf("%02X ", *(packet++));
-            if((++chcnt % 16) == 0)
-                printf("\n");
-        }*/
-        for(i=0;i<length;i++){
+        //printf("Ethernet type hex:%x dev:%d is an ARP packet\n",
+        //        ntohs(ep->ether_type),ntohs(ep->ether_type));
+        /*for(i=0;i<length;i++){
             printf("%02x ", packet[i]);
             if((++chcnt % 16) == 0)
                 printf("\n");
-        }
-        printf("\nSender: ");
+        }*/
+        
+        vector<int> t;
+        //printf("\nSender: ");
         for(i=0;i<4;i++){
-            printf("%d.", packet[14+i]);
+        //    printf("%d.", packet[14+i]);
+            t.push_back(packet[14+i]);
         }
-        printf("\nTarget: ");
+        //printf("\n");
+
+        bool isNew = true;
+        for(i=0;i<v.size();i++){
+            if(isSame(t, v[i]))
+                isNew=false;
+        }
+
+        if(isNew){
+            int c = v.size();
+            v.push_back(t);
+            printf("%d.Sender IP %d.%d.%d.%d\n",v.size(),v[c][0],v[c][1], v[c][2],v[c][3] );            
+        }
+
+       /* printf("\nTarget: ");
          for(i=0;i<4;i++){
             printf("%d.", packet[24+i]);
         }
         printf("\n");
+        */
 
     }
     else {
@@ -151,7 +169,7 @@ int main(int argc, char **argv)
     }
     pcap_set_snaplen(pcd, BUFSIZ);
     pcap_set_promisc(pcd, 1);
-    pcap_set_timeout(pcd, -1);
+    pcap_set_timeout(pcd, 0);
     if(pcap_activate(pcd)==0){
         printf("pcap activate\n");
     } else {
